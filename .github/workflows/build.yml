@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   build-dex:
@@ -48,25 +49,35 @@ jobs:
           echo "Extracted classes89: $(find smali_c89 -type f | wc -l) files"
 
       - name: Compile DEX files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          which smali || true
-          dpkg -L smali || true
-          
-          echo "[*] Compiling classes88.dex..."
-          smali a -a 28 smali_c88 -o classes88.dex 2>&1 | tee c88.log || smali assemble -a 28 smali_c88 -o classes88.dex 2>&1 | tee -a c88.log || smali -a 28 smali_c88 -o classes88.dex 2>&1 | tee -a c88.log || true
+          echo "[*] Testing smali command..."
+          smali -V || smali --version || true
 
-          if [ ! -f classes88.dex ]; then
-            echo "[-] classes88.dex failed! Log:"
-            cat c88.log
-            exit 1
-          fi
+          echo "[*] Compiling classes88.dex..."
+          smali a smali_c88 -o classes88.dex > c88.log 2>&1 || smali assemble smali_c88 -o classes88.dex >> c88.log 2>&1 || true
 
           echo "[*] Compiling classes89.dex..."
-          smali a -a 28 smali_c89 -o classes89.dex 2>&1 | tee c89.log || smali assemble -a 28 smali_c89 -o classes89.dex 2>&1 | tee -a c89.log || smali -a 28 smali_c89 -o classes89.dex 2>&1 | tee -a c89.log || true
+          smali a smali_c89 -o classes89.dex > c89.log 2>&1 || smali assemble smali_c89 -o classes89.dex >> c89.log 2>&1 || true
 
-          if [ ! -f classes89.dex ]; then
-            echo "[-] classes89.dex failed! Log:"
-            cat c89.log
+          if [ ! -f classes88.dex ] || [ ! -f classes89.dex ]; then
+            echo "[-] Build failed. Creating issue with logs..."
+            LOG_CONTENT="### Compilation Error Log
+
+#### classes88.dex log:
+\`\`\`
+$(head -n 50 c88.log)
+$(tail -n 50 c88.log)
+\`\`\`
+
+#### classes89.dex log:
+\`\`\`
+$(head -n 50 c89.log)
+$(tail -n 50 c89.log)
+\`\`\`
+"
+            gh issue create --title "CI Build Diagnostic Log" --body "$LOG_CONTENT" || true
             exit 1
           fi
 
