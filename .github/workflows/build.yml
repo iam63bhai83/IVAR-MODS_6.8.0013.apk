@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   build-dex:
@@ -18,6 +19,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Java 11
         uses: actions/setup-java@v4
@@ -33,23 +35,32 @@ jobs:
           echo "[*] Building smali fatJar with Gradle..."
           ./gradlew smali:fatJar -x test
           cd ..
-          find smali_src/smali/build/libs/ -name "*.jar"
           cp $(find smali_src/smali/build/libs/ -name "*.jar" | head -n 1) ./smali.jar
           ls -lh smali.jar
 
-      - name: Extract and Sort Smali Files
+      - name: Extract and Clean Smali Files
         run: |
           mkdir -p smali_c88 smali_c89
           python3 -c "
-          import zipfile
+          import zipfile, os
           with zipfile.ZipFile('smali.zip', 'r') as z:
               for item in z.infolist():
                   if item.filename.endswith('.smali'):
-                      first = z.open(item).readline().decode('utf-8', errors='ignore').strip()
+                      content = z.read(item).decode('utf-8', errors='ignore')
+                      lines = content.splitlines(True)
+                      first = lines[0].strip() if lines else ''
                       if first == '# classes88.dex':
-                          z.extract(item, 'smali_c88')
+                          target_dir = 'smali_c88'
+                          clean_lines = lines[1:] if len(lines) > 1 else lines
                       elif first == '# classes89.dex':
-                          z.extract(item, 'smali_c89')
+                          target_dir = 'smali_c89'
+                          clean_lines = lines[1:] if len(lines) > 1 else lines
+                      else:
+                          continue
+                      out_path = os.path.join(target_dir, item.filename)
+                      os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                      with open(out_path, 'w', encoding='utf-8') as out_f:
+                          out_f.writelines(clean_lines)
           "
           echo "Extracted classes88: $(find smali_c88 -type f | wc -l) files"
           echo "Extracted classes89: $(find smali_c89 -type f | wc -l) files"
@@ -57,37 +68,59 @@ jobs:
       - name: Compile DEX files
         run: |
           echo "=== SMALI HELP ===" > compile_log.txt
-          java -jar smali.jar --help >> compile_log.txt 2>&1 || true
-          echo "=== ASSEMBLE HELP ===" >> compile_log.txt
           java -jar smali.jar assemble --help >> compile_log.txt 2>&1 || true
-          echo "=== A HELP ===" >> compile_log.txt
-          java -jar smali.jar a --help >> compile_log.txt 2>&1 || true
 
           echo "=== COMPILING CLASSES88 ===" >> compile_log.txt
-          java -jar smali.jar assemble smali_c88 -o classes88.dex >> compile_log.txt 2>&1 || java -jar smali.jar a smali_c88 -o classes88.dex >> compile_log.txt 2>&1 || java -jar smali.jar smali_c88 -o classes88.dex >> compile_log.txt 2>&1 || true
+          java -jar smali.jar assemble -a 28 --verbose -o classes88.dex smali_c88 >> compile_log.txt 2>&1 || \
+          java -jar smali.jar assemble -o classes88.dex smali_c88 >> compile_log.txt 2>&1 || true
 
           echo "=== COMPILING CLASSES89 ===" >> compile_log.txt
-          java -jar smali.jar assemble smali_c89 -o classes89.dex >> compile_log.txt 2>&1 || java -jar smali.jar a smali_c89 -o classes89.dex >> compile_log.txt 2>&1 || java -jar smali.jar smali_c89 -o classes89.dex >> compile_log.txt 2>&1 || true
+          java -jar smali.jar assemble -a 28 --verbose -o classes89.dex smali_c89 >> compile_log.txt 2>&1 || \
+          java -jar smali.jar assemble -o classes89.dex smali_c89 >> compile_log.txt 2>&1 || true
 
-          ls -lh classes88.dex classes89.dex >> compile_log.txt 2>&1 || true
+          cat compile_log.txt
 
-      - name: Commit and Push build logs or DEX files
+          mkdir -p precompiled_dex
+          if [ -f classes88.dex ]; then
+            cp classes88.dex precompiled_dex/
+            ls -lh classes88.dex
+          else
+            echo "classes88.dex FAILED to build!"
+          fi
+
+          if [ -f classes89.dex ]; then
+            cp classes89.dex precompiled_dex/
+            ls -lh classes89.dex
+          else
+            echo "classes89.dex FAILED to build!"
+          fi
+
+      - name: Report Build Log to GitHub Issue
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f compile_log.txt classes88.dex classes89.dex smali.jar || true
-          git commit -m "feat(dex): precompiled classes88.dex and classes89.dex" || echo "No changes"
-          git push origin HEAD:${{ github.ref }}
+          gh issue create --title "CI Build Diagnostic Log ($(date -u +'%Y-%m-%d %H:%M:%S'))" --body-file compile_log.txt || true
 
       - name: Create or Update GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f classes88.dex ] && [ -f classes89.dex ]; then
+          if [ -f precompiled_dex/classes88.dex ] && [ -f precompiled_dex/classes89.dex ]; then
             gh release delete v6.8.0013-dex -y || true
             git tag -d v6.8.0013-dex || true
             git push origin :refs/tags/v6.8.0013-dex || true
-            gh release create v6.8.0013-dex classes88.dex classes89.dex \
+            gh release create v6.8.0013-dex precompiled_dex/classes88.dex precompiled_dex/classes89.dex \
               --title "IVAR-MODS v6.8.0013 Precompiled DEX Files" \
               --notes "Directly compiled classes88.dex and classes89.dex ready for 1-click injection into IVAR MODS_6.8.0013.apk via MT Manager or ZArchiver."
+          fi
+
+      - name: Commit and Push DEX files to repository
+        run: |
+          if [ -f precompiled_dex/classes88.dex ] && [ -f precompiled_dex/classes89.dex ]; then
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git add -f precompiled_dex/
+            git commit -m "feat(dex): add precompiled classes88.dex and classes89.dex into repo" || echo "No changes"
+            git push origin HEAD:${{ github.ref }} || true
           fi
