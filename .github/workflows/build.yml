@@ -73,27 +73,18 @@ jobs:
           echo "=== COMPILING CLASSES88 ===" >> compile_log.txt
           java -jar smali.jar assemble -a 28 --verbose -o classes88.dex smali_c88 >> compile_log.txt 2>&1 || \
           java -jar smali.jar assemble -o classes88.dex smali_c88 >> compile_log.txt 2>&1 || true
+          ls -lh classes88.dex >> compile_log.txt 2>&1 || true
 
           echo "=== COMPILING CLASSES89 ===" >> compile_log.txt
           java -jar smali.jar assemble -a 28 --verbose -o classes89.dex smali_c89 >> compile_log.txt 2>&1 || \
           java -jar smali.jar assemble -o classes89.dex smali_c89 >> compile_log.txt 2>&1 || true
+          ls -lh classes89.dex >> compile_log.txt 2>&1 || true
 
           cat compile_log.txt
 
           mkdir -p precompiled_dex
-          if [ -f classes88.dex ]; then
-            cp classes88.dex precompiled_dex/
-            ls -lh classes88.dex
-          else
-            echo "classes88.dex FAILED to build!"
-          fi
-
-          if [ -f classes89.dex ]; then
-            cp classes89.dex precompiled_dex/
-            ls -lh classes89.dex
-          else
-            echo "classes89.dex FAILED to build!"
-          fi
+          [ -f classes88.dex ] && cp -f classes88.dex precompiled_dex/
+          [ -f classes89.dex ] && cp -f classes89.dex precompiled_dex/
 
       - name: Report Build Log to GitHub Issue
         if: always()
@@ -106,13 +97,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f precompiled_dex/classes88.dex ] && [ -f precompiled_dex/classes89.dex ]; then
+          if [ -f classes88.dex ] && [ -f classes89.dex ]; then
+            echo "[*] Creating GitHub Release v6.8.0013-dex..."
             gh release delete v6.8.0013-dex -y || true
             git tag -d v6.8.0013-dex || true
             git push origin :refs/tags/v6.8.0013-dex || true
-            gh release create v6.8.0013-dex precompiled_dex/classes88.dex precompiled_dex/classes89.dex \
+            gh release create v6.8.0013-dex classes88.dex classes89.dex \
               --title "IVAR-MODS v6.8.0013 Precompiled DEX Files" \
               --notes "Directly compiled classes88.dex and classes89.dex ready for 1-click injection into IVAR MODS_6.8.0013.apk via MT Manager or ZArchiver."
+          else
+            echo "[!] Both DEX files must exist to create release."
           fi
 
       - name: Commit and Push DEX files to repository
