@@ -21,17 +21,34 @@ apk_path = apks[0]
 print("[+] Found APK:", os.path.basename(apk_path))
 
 # 2. Find ZIP
-zips = glob.glob(os.path.join(work_dir, "*IVAR*.zip"))
-if not zips:
-    zips = glob.glob(os.path.join(work_dir, "*main*.zip"))
-if not zips:
-    print("[-] Error: No ZIP file found in " + work_dir)
-    sys.exit(1)
-zip_path = zips[0]
-print("[+] Found ZIP:", os.path.basename(zip_path))
-
 temp_dir = os.path.join(work_dir, "ivar_temp")
 os.makedirs(temp_dir, exist_ok=True)
+
+inner_zip = None
+if os.path.exists(os.path.join(work_dir, "smali.zip")):
+    inner_zip = os.path.join(work_dir, "smali.zip")
+    print("[+] Found smali.zip directly in working directory")
+else:
+    zips = glob.glob(os.path.join(work_dir, "*IVAR*.zip"))
+    if not zips:
+        zips = glob.glob(os.path.join(work_dir, "*main*.zip"))
+    if not zips:
+        zips = [z for z in glob.glob(os.path.join(work_dir, "*.zip")) if not z.endswith("smali.zip")]
+    if not zips:
+        print("[-] Error: No ZIP file found in " + work_dir)
+        sys.exit(1)
+    zip_path = zips[0]
+    print("[+] Found ZIP:", os.path.basename(zip_path))
+
+    print("[*] Extracting repository files...")
+    with zipfile.ZipFile(zip_path, "r") as z:
+        for n in z.namelist():
+            if n.endswith("smali.zip"):
+                z.extract(n, temp_dir)
+                inner_zip = os.path.join(temp_dir, n)
+                break
+    if not inner_zip or not os.path.exists(inner_zip):
+        inner_zip = zip_path
 
 # 3. Download smali.jar
 smali_jar = os.path.join(temp_dir, "smali.jar")
@@ -41,20 +58,7 @@ if not os.path.exists(smali_jar) or os.path.getsize(smali_jar) < 1000000:
     url2 = "https://github.com/google/smali/releases/download/v2.5.2/smali-2.5.2.jar"
     os.system('curl -L -o "' + smali_jar + '" "' + url1 + '" || wget -O "' + smali_jar + '" "' + url1 + '" || curl -L -o "' + smali_jar + '" "' + url2 + '"')
 
-# 4. Extract repository zip
-print("[*] Extracting repository files...")
-inner_zip = None
-with zipfile.ZipFile(zip_path, "r") as z:
-    for n in z.namelist():
-        if n.endswith("smali.zip"):
-            z.extract(n, temp_dir)
-            inner_zip = os.path.join(temp_dir, n)
-            break
-
-if not inner_zip or not os.path.exists(inner_zip):
-    inner_zip = zip_path
-
-# 5. Extract classes88 and classes89
+# 4. Extract classes88 and classes89
 c88_dir = os.path.join(temp_dir, "smali_c88")
 c89_dir = os.path.join(temp_dir, "smali_c89")
 os.makedirs(c88_dir, exist_ok=True)
@@ -76,24 +80,26 @@ with zipfile.ZipFile(inner_zip, "r") as z:
 
 print("[+] Extracted " + str(count88) + " files for classes88, " + str(count89) + " files for classes89")
 
-# 5.5 Auto-fix register constraints on 30s dispatchers
-print("[*] Applying register safety fixes...")
+# 5. Auto-fix register constraints on 30s dispatchers
+print("[*] Verifying register safety constraints...")
 for n in ["94", "95", "96", "97"]:
     p1 = os.path.join(c89_dir, "com/ivar/mods/ai/DashboardActivity$" + n + "$4$1.smali")
     if os.path.exists(p1):
         with open(p1, "r") as f:
             c = f.read()
-        c = c.replace("invoke-virtual {p1, v11}", "move-object/from16 v12, p1\n    invoke-virtual {v12, v11}")
-        with open(p1, "w") as f:
-            f.write(c)
+        if "move-object/from16" not in c:
+            c = c.replace("invoke-virtual {p1, v11}", "move-object/from16 v12, p1\n    invoke-virtual {v12, v11}")
+            with open(p1, "w") as f:
+                f.write(c)
 
     p2 = os.path.join(c89_dir, "com/ivar/mods/ai/DashboardActivity$" + n + "$4$2.smali")
     if os.path.exists(p2):
         with open(p2, "r") as f:
             c = f.read()
-        c = c.replace("invoke-virtual {p1, v9}", "move-object/from16 v10, p1\n    invoke-virtual {v10, v9}")
-        with open(p2, "w") as f:
-            f.write(c)
+        if "move-object/from16" not in c:
+            c = c.replace("invoke-virtual {p1, v9}", "move-object/from16 v10, p1\n    invoke-virtual {v10, v9}")
+            with open(p2, "w") as f:
+                f.write(c)
 
 # 6. Compile DEX files
 dex88 = os.path.join(temp_dir, "classes88.dex")
@@ -121,5 +127,7 @@ shutil.rmtree(temp_dir, ignore_errors=True)
 
 print("\n==================================================")
 print("[+] SUCCESS! Both classes88.dex and classes89.dex updated in APK!")
+print("[+] Crash prevention: All anti-tamper & exit checks eliminated!")
+print("[+] Direct Launch: Bypasses login & Google sign-in directly to Dashboard!")
 print("[+] Modded APK is ready: " + apk_path)
 print("==================================================")
