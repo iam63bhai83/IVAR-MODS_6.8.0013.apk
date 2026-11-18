@@ -76,6 +76,25 @@ with zipfile.ZipFile(inner_zip, "r") as z:
 
 print("[+] Extracted " + str(count88) + " files for classes88, " + str(count89) + " files for classes89")
 
+# 5.5 Auto-fix register constraints on 30s dispatchers
+print("[*] Applying register safety fixes...")
+for n in ["94", "95", "96", "97"]:
+    p1 = os.path.join(c89_dir, "com/ivar/mods/ai/DashboardActivity$" + n + "$4$1.smali")
+    if os.path.exists(p1):
+        with open(p1, "r") as f:
+            c = f.read()
+        c = c.replace("invoke-virtual {p1, v11}", "move-object/from16 v12, p1\n    invoke-virtual {v12, v11}")
+        with open(p1, "w") as f:
+            f.write(c)
+
+    p2 = os.path.join(c89_dir, "com/ivar/mods/ai/DashboardActivity$" + n + "$4$2.smali")
+    if os.path.exists(p2):
+        with open(p2, "r") as f:
+            c = f.read()
+        c = c.replace("invoke-virtual {p1, v9}", "move-object/from16 v10, p1\n    invoke-virtual {v10, v9}")
+        with open(p2, "w") as f:
+            f.write(c)
+
 # 6. Compile DEX files
 dex88 = os.path.join(temp_dir, "classes88.dex")
 dex89 = os.path.join(temp_dir, "classes89.dex")
