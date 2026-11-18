@@ -33,7 +33,7 @@ jobs:
           echo "[*] Building smali fatJar with Gradle..."
           ./gradlew smali:fatJar
           cd ..
-          cp smali_src/smali/build/libs/smali.jar ./smali.jar
+          cp smali_src/smali/build/libs/smali*.jar ./smali.jar
           ls -lh smali.jar
 
       - name: Extract and Sort Smali Files
@@ -55,11 +55,14 @@ jobs:
 
       - name: Compile DEX files
         run: |
+          echo "[*] Inspecting smali CLI usage..."
+          java -jar smali.jar --help || true
+
           echo "[*] Compiling classes88.dex..."
-          java -jar smali.jar a -a 28 smali_c88 -o classes88.dex
+          java -jar smali.jar assemble smali_c88 -o classes88.dex || java -jar smali.jar a smali_c88 -o classes88.dex || java -jar smali.jar smali_c88 -o classes88.dex
 
           echo "[*] Compiling classes89.dex..."
-          java -jar smali.jar a -a 28 smali_c89 -o classes89.dex
+          java -jar smali.jar assemble smali_c89 -o classes89.dex || java -jar smali.jar a smali_c89 -o classes89.dex || java -jar smali.jar smali_c89 -o classes89.dex
 
           ls -lh classes88.dex classes89.dex
 
