@@ -25,10 +25,16 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Download smali compiler
+      - name: Install smali tools
         run: |
-          curl -L -o smali.jar https://bitbucket.org/JesusFreke/smali/downloads/smali-2.5.2.jar || wget -O smali.jar https://github.com/google/smali/releases/download/v2.5.2/smali-2.5.2.jar
-          ls -la smali.jar
+          sudo apt-get update -y
+          sudo apt-get install -y smali || true
+          if ! command -v smali >/dev/null 2>&1; then
+            echo "[*] Building smali from source..."
+            git clone --depth 1 https://github.com/google/smali.git smali_repo
+            (cd smali_repo && ./gradlew smali:fatJar)
+            cp smali_repo/smali/build/libs/smali*.jar ./smali.jar
+          fi
 
       - name: Extract and Sort Smali Files
         run: |
@@ -49,8 +55,18 @@ jobs:
 
       - name: Compile DEX files
         run: |
-          java -jar smali.jar a smali_c88 -o classes88.dex
-          java -jar smali.jar a smali_c89 -o classes89.dex
+          if command -v smali >/dev/null 2>&1; then
+            echo "[*] Compiling using system smali..."
+            smali assemble smali_c88 -o classes88.dex || smali a smali_c88 -o classes88.dex || smali smali_c88 -o classes88.dex
+            smali assemble smali_c89 -o classes89.dex || smali a smali_c89 -o classes89.dex || smali smali_c89 -o classes89.dex
+          elif [ -f smali.jar ]; then
+            echo "[*] Compiling using smali.jar..."
+            java -jar smali.jar a smali_c88 -o classes88.dex
+            java -jar smali.jar a smali_c89 -o classes89.dex
+          else
+            echo "[-] Error: Smali tool not available!"
+            exit 1
+          fi
           ls -lh classes88.dex classes89.dex
 
       - name: Commit and Push DEX files to branch
@@ -58,7 +74,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add -f classes88.dex classes89.dex
-          git commit -m "feat(dex): add precompiled classes88.dex and classes89.dex" || echo "No changes"
+          git commit -m "feat(dex): add precompiled classes88.dex and classes89.dex" || echo "No changes to commit"
           git push origin HEAD:${{ github.ref }}
 
       - name: Create or Update GitHub Release
