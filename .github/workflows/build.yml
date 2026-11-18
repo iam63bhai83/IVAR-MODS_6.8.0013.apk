@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write
-  issues: write
 
 jobs:
   build-dex:
@@ -26,10 +25,16 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install smali tools
+      - name: Build smali compiler from source
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y smali || true
+          echo "[*] Cloning google/smali..."
+          git clone --depth 1 https://github.com/google/smali.git smali_src
+          cd smali_src
+          echo "[*] Building smali fatJar with Gradle..."
+          ./gradlew smali:fatJar
+          cd ..
+          cp smali_src/smali/build/libs/smali.jar ./smali.jar
+          ls -lh smali.jar
 
       - name: Extract and Sort Smali Files
         run: |
@@ -49,37 +54,12 @@ jobs:
           echo "Extracted classes89: $(find smali_c89 -type f | wc -l) files"
 
       - name: Compile DEX files
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "[*] Testing smali command..."
-          smali -V || smali --version || true
-
           echo "[*] Compiling classes88.dex..."
-          smali a smali_c88 -o classes88.dex > c88.log 2>&1 || smali assemble smali_c88 -o classes88.dex >> c88.log 2>&1 || true
+          java -jar smali.jar a -a 28 smali_c88 -o classes88.dex
 
           echo "[*] Compiling classes89.dex..."
-          smali a smali_c89 -o classes89.dex > c89.log 2>&1 || smali assemble smali_c89 -o classes89.dex >> c89.log 2>&1 || true
-
-          if [ ! -f classes88.dex ] || [ ! -f classes89.dex ]; then
-            echo "[-] Build failed. Creating issue with logs..."
-            LOG_CONTENT="### Compilation Error Log
-
-#### classes88.dex log:
-\`\`\`
-$(head -n 50 c88.log)
-$(tail -n 50 c88.log)
-\`\`\`
-
-#### classes89.dex log:
-\`\`\`
-$(head -n 50 c89.log)
-$(tail -n 50 c89.log)
-\`\`\`
-"
-            gh issue create --title "CI Build Diagnostic Log" --body "$LOG_CONTENT" || true
-            exit 1
-          fi
+          java -jar smali.jar a -a 28 smali_c89 -o classes89.dex
 
           ls -lh classes88.dex classes89.dex
 
