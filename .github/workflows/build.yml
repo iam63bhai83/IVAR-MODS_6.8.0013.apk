@@ -1,0 +1,73 @@
+name: Build Precompiled DEX Files
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-dex:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Download smali compiler
+        run: |
+          curl -L -o smali.jar https://bitbucket.org/JesusFreke/smali/downloads/smali-2.5.2.jar || wget -O smali.jar https://github.com/google/smali/releases/download/v2.5.2/smali-2.5.2.jar
+          ls -la smali.jar
+
+      - name: Extract and Sort Smali Files
+        run: |
+          mkdir -p smali_c88 smali_c89
+          python3 -c "
+          import zipfile
+          with zipfile.ZipFile('smali.zip', 'r') as z:
+              for item in z.infolist():
+                  if item.filename.endswith('.smali'):
+                      first = z.open(item).readline().decode('utf-8', errors='ignore').strip()
+                      if first == '# classes88.dex':
+                          z.extract(item, 'smali_c88')
+                      elif first == '# classes89.dex':
+                          z.extract(item, 'smali_c89')
+          "
+          echo "Extracted classes88: $(find smali_c88 -type f | wc -l) files"
+          echo "Extracted classes89: $(find smali_c89 -type f | wc -l) files"
+
+      - name: Compile DEX files
+        run: |
+          java -jar smali.jar a smali_c88 -o classes88.dex
+          java -jar smali.jar a smali_c89 -o classes89.dex
+          ls -lh classes88.dex classes89.dex
+
+      - name: Commit and Push DEX files to branch
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f classes88.dex classes89.dex
+          git commit -m "feat(dex): add precompiled classes88.dex and classes89.dex" || echo "No changes"
+          git push origin HEAD:${{ github.ref }}
+
+      - name: Create or Update GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete v6.8.0013-dex -y || true
+          git tag -d v6.8.0013-dex || true
+          git push origin :refs/tags/v6.8.0013-dex || true
+          gh release create v6.8.0013-dex classes88.dex classes89.dex \
+            --title "IVAR-MODS v6.8.0013 Precompiled DEX Files" \
+            --notes "Directly compiled classes88.dex and classes89.dex ready for 1-click injection into IVAR MODS_6.8.0013.apk via MT Manager or ZArchiver."
