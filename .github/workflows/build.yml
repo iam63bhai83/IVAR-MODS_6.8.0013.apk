@@ -19,11 +19,11 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Java 17
+      - name: Setup Java 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '11'
 
       - name: Build smali compiler from source
         run: |
@@ -31,9 +31,10 @@ jobs:
           git clone --depth 1 https://github.com/google/smali.git smali_src
           cd smali_src
           echo "[*] Building smali fatJar with Gradle..."
-          ./gradlew smali:fatJar
+          ./gradlew smali:fatJar -x test
           cd ..
-          cp smali_src/smali/build/libs/smali*.jar ./smali.jar
+          find smali_src/smali/build/libs/ -name "*.jar"
+          cp $(find smali_src/smali/build/libs/ -name "*.jar" | head -n 1) ./smali.jar
           ls -lh smali.jar
 
       - name: Extract and Sort Smali Files
