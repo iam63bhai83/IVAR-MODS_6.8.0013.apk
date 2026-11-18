@@ -56,32 +56,38 @@ jobs:
 
       - name: Compile DEX files
         run: |
-          echo "[*] Inspecting smali CLI usage..."
-          java -jar smali.jar --help || true
+          echo "=== SMALI HELP ===" > compile_log.txt
+          java -jar smali.jar --help >> compile_log.txt 2>&1 || true
+          echo "=== ASSEMBLE HELP ===" >> compile_log.txt
+          java -jar smali.jar assemble --help >> compile_log.txt 2>&1 || true
+          echo "=== A HELP ===" >> compile_log.txt
+          java -jar smali.jar a --help >> compile_log.txt 2>&1 || true
 
-          echo "[*] Compiling classes88.dex..."
-          java -jar smali.jar assemble smali_c88 -o classes88.dex || java -jar smali.jar a smali_c88 -o classes88.dex || java -jar smali.jar smali_c88 -o classes88.dex
+          echo "=== COMPILING CLASSES88 ===" >> compile_log.txt
+          java -jar smali.jar assemble smali_c88 -o classes88.dex >> compile_log.txt 2>&1 || java -jar smali.jar a smali_c88 -o classes88.dex >> compile_log.txt 2>&1 || java -jar smali.jar smali_c88 -o classes88.dex >> compile_log.txt 2>&1 || true
 
-          echo "[*] Compiling classes89.dex..."
-          java -jar smali.jar assemble smali_c89 -o classes89.dex || java -jar smali.jar a smali_c89 -o classes89.dex || java -jar smali.jar smali_c89 -o classes89.dex
+          echo "=== COMPILING CLASSES89 ===" >> compile_log.txt
+          java -jar smali.jar assemble smali_c89 -o classes89.dex >> compile_log.txt 2>&1 || java -jar smali.jar a smali_c89 -o classes89.dex >> compile_log.txt 2>&1 || java -jar smali.jar smali_c89 -o classes89.dex >> compile_log.txt 2>&1 || true
 
-          ls -lh classes88.dex classes89.dex
+          ls -lh classes88.dex classes89.dex >> compile_log.txt 2>&1 || true
 
-      - name: Commit and Push DEX files to branch
+      - name: Commit and Push build logs or DEX files
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f classes88.dex classes89.dex
-          git commit -m "feat(dex): add precompiled classes88.dex and classes89.dex" || echo "No changes to commit"
+          git add -f compile_log.txt classes88.dex classes89.dex smali.jar || true
+          git commit -m "feat(dex): precompiled classes88.dex and classes89.dex" || echo "No changes"
           git push origin HEAD:${{ github.ref }}
 
       - name: Create or Update GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v6.8.0013-dex -y || true
-          git tag -d v6.8.0013-dex || true
-          git push origin :refs/tags/v6.8.0013-dex || true
-          gh release create v6.8.0013-dex classes88.dex classes89.dex \
-            --title "IVAR-MODS v6.8.0013 Precompiled DEX Files" \
-            --notes "Directly compiled classes88.dex and classes89.dex ready for 1-click injection into IVAR MODS_6.8.0013.apk via MT Manager or ZArchiver."
+          if [ -f classes88.dex ] && [ -f classes89.dex ]; then
+            gh release delete v6.8.0013-dex -y || true
+            git tag -d v6.8.0013-dex || true
+            git push origin :refs/tags/v6.8.0013-dex || true
+            gh release create v6.8.0013-dex classes88.dex classes89.dex \
+              --title "IVAR-MODS v6.8.0013 Precompiled DEX Files" \
+              --notes "Directly compiled classes88.dex and classes89.dex ready for 1-click injection into IVAR MODS_6.8.0013.apk via MT Manager or ZArchiver."
+          fi
